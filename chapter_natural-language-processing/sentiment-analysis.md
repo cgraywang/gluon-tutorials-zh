@@ -19,7 +19,7 @@ from collections import Counter
 
 ### 读取IMDB
 
-接着需要下载情感分析时需要用的数据集。我们使用Stanford's Large Movie Review Dataset作为数据集，下载地址：http://ai.stanford.edu/~amaas/data/sentiment/ 。这个数据集有25,000条从IMDB下载的关于电影的评论，其中12,500条被标注成“正面”的评论，另外12,500条被标注成“负面”的评论。
+接着需要下载情感分析时需要用的数据集。我们使用Stanford's Large Movie Review Dataset作为数据集，下载地址：http://ai.stanford.edu/~amaas/data/sentiment/ 。这个数据集分为训练（train）和测试（test）数据集，分别都有25,000条从IMDB下载的关于电影的评论，其中12,500条被标注成“正面”的评论，另外12,500条被标注成“负面”的评论。下载好之后，将数据解压，放在教程的'data/'文件夹之下。
 
 ```{.python .input  n=2}
 def readIMDB(dir_url, seg = 'train'):
@@ -41,21 +41,29 @@ train_dataset = readIMDB('aclImdb/', 'train')
 test_dataset = readIMDB('aclImdb/', 'test')
 ```
 
+下面这步是可选的，如果您迫不急待的想查看情感分析的结果，那么下面这步会帮您采样1/25的数据，快速训练模型并得到结果。否则，请忽略下面这步，使用原始的数据集进行训练和预测。
+
 ```{.python .input  n=3}
-#随机采样1000个样本用于训练
+#随机采样1000个样本用于训练和预测
 
 def sample_dataset(dataset, selected_sample_idxs):
     sampled_dataset = []
     for idx in selected_sample_idxs:
         sampled_dataset.append(dataset[idx])
     return sampled_dataset
-sampler = gluon.contrib.data.IntervalSampler(len(train_dataset), interval=250, rollover=False)
+sampler = gluon.contrib.data.IntervalSampler(len(train_dataset), interval=25, rollover=False)
 
 train_dataset = sample_dataset(train_dataset, list(sampler))
 test_dataset = sample_dataset(test_dataset, list(sampler))
 ```
 
+```{.python .input}
+len(train_dataset)
+```
+
 ### 指定分词工具并且分词
+
+接下来我们对文本分词。我们选用spacy进行分词，记得先pip安装spacy。然后运行下面的代码。
 
 ```{.python .input  n=4}
 import spacy
@@ -63,16 +71,6 @@ spacy_en = spacy.load('en')
 
 def tokenizer(text):
     return [tok.text for tok in spacy_en.tokenizer(text)]
-```
-
-```{.json .output n=4}
-[
- {
-  "name": "stderr",
-  "output_type": "stream",
-  "text": "/Users/chgwang/miniconda3/envs/gluon/lib/python3.6/site-packages/msgpack_numpy.py:84: DeprecationWarning: The binary mode of fromstring is deprecated, as it behaves surprisingly on unicode inputs. Use frombuffer instead\n  dtype=np.dtype(descr)).reshape(obj[b'shape'])\n/Users/chgwang/miniconda3/envs/gluon/lib/python3.6/site-packages/msgpack_numpy.py:88: DeprecationWarning: The binary mode of fromstring is deprecated, as it behaves surprisingly on unicode inputs. Use frombuffer instead\n  dtype=np.dtype(descr))[0]\n"
- }
-]
 ```
 
 ```{.python .input  n=5}
@@ -89,6 +87,8 @@ for review, score in test_dataset:
 ```
 
 ### 创建词典
+
+现在，先创建counter，然后使用mxnet.contrib中的vocab创建词典。
 
 ```{.python .input  n=6}
 from mxnet.contrib import text
@@ -137,6 +137,8 @@ def pad_samples(x_encoded_samples, maxlen = 500, val = 0):
     return x_samples
 ```
 
+运行下面的代码将分好词的训练和测试数据转化成特征向量。
+
 ```{.python .input  n=8}
 x_encoded_train = encode_samples(train_tokenized, vocab)
 x_encoded_test = encode_samples(test_tokenized, vocab)
@@ -158,62 +160,6 @@ y_test = mx.nd.array([score for text, score in test_dataset], ctx=context)
 
 ```{.python .input  n=11}
 glove_embedding = text.embedding.create('glove', pretrained_file_name='glove.6B.100d.txt', vocabulary=vocab)
-```
-
-```{.python .input  n=64}
-data = x_train[0:10]
-```
-
-```{.python .input  n=82}
-y_train
-```
-
-```{.json .output n=82}
-[
- {
-  "data": {
-   "text/plain": "\n[1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1.\n 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1. 1.\n 1. 1. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.\n 0. 0. 0. 0.]\n<NDArray 100 @cpu(0)>"
-  },
-  "execution_count": 82,
-  "metadata": {},
-  "output_type": "execute_result"
- }
-]
-```
-
-```{.python .input  n=66}
-data = data.T
-```
-
-```{.python .input  n=74}
-data = mx.nd.concat(data[0], data[data.shape[0]-1])
-```
-
-```{.python .input  n=76}
-data = net.decoder(data)
-```
-
-```{.python .input  n=33}
-data = mx.nd.reshape(x_train[0:10,], (-2, batch_size)).as_in_context(context)
-```
-
-```{.json .output n=33}
-[
- {
-  "ename": "MXNetError",
-  "evalue": "[15:16:06] src/operator/tensor/./matrix_op-inl.h:157: Check failed: oshape.Size() == dshape.Size() (50000 vs. 5000) Target shape size is different to source. Target: [10,500,10]\nSource: [10,500]\n\nStack trace returned 8 entries:\n[bt] (0) 0   libmxnet.so                         0x0000000111d24ccf libmxnet.so + 56527\n[bt] (1) 1   libmxnet.so                         0x0000000111d24a6f libmxnet.so + 55919\n[bt] (2) 2   libmxnet.so                         0x0000000112d19088 libmxnet.so + 16785544\n[bt] (3) 3   libmxnet.so                         0x0000000112e88c9a MXNDListFree + 433578\n[bt] (4) 4   libmxnet.so                         0x0000000112e878a9 MXNDListFree + 428473\n[bt] (5) 5   libmxnet.so                         0x0000000112df7627 MXCustomFunctionRecord + 17559\n[bt] (6) 6   libmxnet.so                         0x0000000112df8850 MXImperativeInvokeEx + 176\n[bt] (7) 7   libffi.6.dylib                      0x00000001100e0884 ffi_call_unix64 + 76\n\n",
-  "output_type": "error",
-  "traceback": [
-   "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
-   "\u001b[0;31mMXNetError\u001b[0m                                Traceback (most recent call last)",
-   "\u001b[0;32m<ipython-input-33-0386da22c5dd>\u001b[0m in \u001b[0;36m<module>\u001b[0;34m()\u001b[0m\n\u001b[0;32m----> 1\u001b[0;31m \u001b[0mdata\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mmx\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mnd\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mreshape\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mx_train\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m0\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;36m10\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m(\u001b[0m\u001b[0;34m-\u001b[0m\u001b[0;36m2\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mbatch_size\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mas_in_context\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mcontext\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m",
-   "\u001b[0;32m/Users/chgwang/miniconda3/envs/gluon/lib/python3.6/site-packages/mxnet/ndarray/register.py\u001b[0m in \u001b[0;36mreshape\u001b[0;34m(data, shape, reverse, target_shape, keep_highest, out, name, **kwargs)\u001b[0m\n",
-   "\u001b[0;32m/Users/chgwang/miniconda3/envs/gluon/lib/python3.6/site-packages/mxnet/_ctypes/ndarray.py\u001b[0m in \u001b[0;36m_imperative_invoke\u001b[0;34m(handle, ndargs, keys, vals, out)\u001b[0m\n\u001b[1;32m     90\u001b[0m         \u001b[0mc_str_array\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mkeys\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     91\u001b[0m         \u001b[0mc_str_array\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0mstr\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0ms\u001b[0m\u001b[0;34m)\u001b[0m \u001b[0;32mfor\u001b[0m \u001b[0ms\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mvals\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 92\u001b[0;31m         ctypes.byref(out_stypes)))\n\u001b[0m\u001b[1;32m     93\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     94\u001b[0m     \u001b[0;32mif\u001b[0m \u001b[0moriginal_output\u001b[0m \u001b[0;32mis\u001b[0m \u001b[0;32mnot\u001b[0m \u001b[0;32mNone\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
-   "\u001b[0;32m/Users/chgwang/miniconda3/envs/gluon/lib/python3.6/site-packages/mxnet/base.py\u001b[0m in \u001b[0;36mcheck_call\u001b[0;34m(ret)\u001b[0m\n\u001b[1;32m    147\u001b[0m     \"\"\"\n\u001b[1;32m    148\u001b[0m     \u001b[0;32mif\u001b[0m \u001b[0mret\u001b[0m \u001b[0;34m!=\u001b[0m \u001b[0;36m0\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m--> 149\u001b[0;31m         \u001b[0;32mraise\u001b[0m \u001b[0mMXNetError\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mpy_str\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0m_LIB\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mMXGetLastError\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m    150\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m    151\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
-   "\u001b[0;31mMXNetError\u001b[0m: [15:16:06] src/operator/tensor/./matrix_op-inl.h:157: Check failed: oshape.Size() == dshape.Size() (50000 vs. 5000) Target shape size is different to source. Target: [10,500,10]\nSource: [10,500]\n\nStack trace returned 8 entries:\n[bt] (0) 0   libmxnet.so                         0x0000000111d24ccf libmxnet.so + 56527\n[bt] (1) 1   libmxnet.so                         0x0000000111d24a6f libmxnet.so + 55919\n[bt] (2) 2   libmxnet.so                         0x0000000112d19088 libmxnet.so + 16785544\n[bt] (3) 3   libmxnet.so                         0x0000000112e88c9a MXNDListFree + 433578\n[bt] (4) 4   libmxnet.so                         0x0000000112e878a9 MXNDListFree + 428473\n[bt] (5) 5   libmxnet.so                         0x0000000112df7627 MXCustomFunctionRecord + 17559\n[bt] (6) 6   libmxnet.so                         0x0000000112df8850 MXImperativeInvokeEx + 176\n[bt] (7) 7   libffi.6.dylib                      0x00000001100e0884 ffi_call_unix64 + 76\n\n"
-  ]
- }
-]
 ```
 
 ## 创建情感分析模型
@@ -291,32 +237,9 @@ for epoch in range(epochs):
     print("Epoch %s. Train_acc %s, Test_acc %s"%(epoch, train_accuracy, test_accuracy))
 ```
 
-```{.json .output n=87}
-[
- {
-  "name": "stdout",
-  "output_type": "stream",
-  "text": "Batch 0. loss [0.8850705  0.89992434 0.8947954  0.8833381  0.9013978  0.90739346\n 0.8713056  0.88355994 0.87615055 0.9600185 ]\nEpoch 0. Train_acc 0.5, Test_acc 0.5\n"
- }
-]
-```
-
 ```{.python .input  n=89}
 #例子
 net(mx.nd.reshape(mx.nd.array([vocab.token_to_idx['This'], vocab.token_to_idx['movie'], 
                                  vocab.token_to_idx['is'], vocab.token_to_idx['great']], 
                                 ctx=context), shape=(-1, 1))).sigmoid()
-```
-
-```{.json .output n=89}
-[
- {
-  "data": {
-   "text/plain": "\n[[0.56882524 0.42506438]]\n<NDArray 1x2 @cpu(0)>"
-  },
-  "execution_count": 89,
-  "metadata": {},
-  "output_type": "execute_result"
- }
-]
 ```
